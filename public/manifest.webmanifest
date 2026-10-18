@@ -1,0 +1,13 @@
+{
+  "name": "Ledgerly — Business, clearly.",
+  "short_name": "Ledgerly",
+  "description": "Local-first sales and inventory management for independent retailers.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f6f2",
+  "theme_color": "#f5f6f2",
+  "icons": [
+    { "src": "/icons/ledgerly.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

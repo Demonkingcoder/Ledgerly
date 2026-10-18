@@ -30,7 +30,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
-    void ledgerService.initialize().then(async () => {
+    void ledgerService.initialize({ startEmpty: true }).then(async () => {
       if (mounted) await refresh();
     }).catch((reason: unknown) => {
       if (mounted) setError(isStorageUnavailable(reason));

@@ -150,6 +150,22 @@ describe('atomic sales workflow', () => {
   });
 });
 
+describe('first-run workspace initialization', () => {
+  it('keeps a new app workspace empty until the user chooses sample data', async () => {
+    const name = `Ledgerly-empty-${crypto.randomUUID()}`;
+    names.push(name);
+    const database = new LedgerDatabase(name);
+    const repo = new DexieLedgerRepository(database);
+    await repo.initialize({ startEmpty: true });
+
+    const snapshot = await repo.getSnapshot();
+    expect(snapshot.products).toHaveLength(0);
+    expect(snapshot.sales).toHaveLength(0);
+    expect(snapshot.settings).toMatchObject({ setupComplete: false, checklistDismissed: false, demoData: false });
+    database.close();
+  });
+});
+
 describe('purchase and payments workflows', () => {
   it('does not increase stock for a draft and receives it exactly once', async () => {
     const before = await service.snapshot();

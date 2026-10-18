@@ -140,6 +140,8 @@ export interface BusinessSettings {
   defaultReorderPoint: number;
   theme: 'light' | 'system';
   demoData: boolean;
+  setupComplete: boolean;
+  checklistDismissed: boolean;
   updatedAt: string;
 }
 

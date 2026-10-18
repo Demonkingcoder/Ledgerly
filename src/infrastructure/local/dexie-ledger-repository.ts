@@ -44,10 +44,15 @@ export class DexieLedgerRepository implements LedgerRepository {
 
   constructor(private readonly db: LedgerDatabase) {}
 
-  async initialize(): Promise<void> {
+  async initialize(options: { startEmpty?: boolean } = {}): Promise<void> {
     await this.db.open();
     const settings = await this.db.settings.get('business');
-    if (!settings) await seedDemoData(this.db);
+    if (!settings) {
+      if (options.startEmpty) await this.db.settings.put(emptySnapshot().settings);
+      else await seedDemoData(this.db);
+      return;
+    }
+    if (!settings.setupComplete && !options.startEmpty) await seedDemoData(this.db);
   }
 
   subscribe(listener: () => void): () => void {
@@ -404,8 +409,10 @@ export class DexieLedgerRepository implements LedgerRepository {
 
   async resetDemoData(): Promise<void> {
     const currentSettings = await this.db.settings.get('business');
-    if (!currentSettings?.demoData) throw new Error('Demo reset is only available in the demo workspace.');
+    if (!currentSettings || (!currentSettings.demoData && currentSettings.setupComplete)) throw new Error('Demo reset is only available before setup or in the demo workspace.');
     const snapshot = makeDemoSnapshot();
+    snapshot.settings.setupComplete = currentSettings.setupComplete;
+    snapshot.settings.checklistDismissed = false;
     await this.db.transaction('rw', this.db.tables, async () => {
       await Promise.all(this.db.tables.map((table: Table<unknown, string>) => table.clear()));
       await Promise.all([

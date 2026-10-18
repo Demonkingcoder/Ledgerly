@@ -21,7 +21,7 @@ flowchart TB
   end
   subgraph Infrastructure
     Dexie[Dexie repository]
-    IndexedDB[(IndexedDB schema v4)]
+    IndexedDB[(IndexedDB schema v5)]
     Backup[Validated JSON backup]
     Api[Typed future API client]
   end
@@ -40,7 +40,7 @@ flowchart TB
 
 ## Persistence and transactions
 
-The database is named `LedgerlyLocal`. Version 1 creates the domain tables, version 2 ensures a business settings record exists, version 3 reconciles on-hand quantities against recorded stock movements with a dated stock-count adjustment, and version 4 adds an optional customer address field. The v3 migration preserves each current quantity; it does not reconstruct missing historical movements. The v4 migration supplies a blank address for existing customers. Records use stable UUID-based string identifiers. Financial values are stored as integer paise.
+The database is named `LedgerlyLocal`. Version 1 creates the domain tables, version 2 ensures a business settings record exists, version 3 reconciles on-hand quantities against recorded stock movements with a dated stock-count adjustment, version 4 adds an optional customer address field, and version 5 records first-use setup and checklist preferences. Existing records are marked as set up; a new empty workspace can choose sample data or start empty. The v3 migration preserves each current quantity; it does not reconstruct missing historical movements. The v4 migration supplies a blank address for existing customers. Records use stable UUID-based string identifiers. Financial values are stored as integer paise.
 
 These workflows use a single IndexedDB read/write transaction:
 

@@ -6,7 +6,7 @@ import { backupSchema, type BackupDocument } from '../domain/validation';
 export class LedgerService {
   constructor(private readonly repository: LedgerRepository) {}
 
-  initialize() { return this.repository.initialize(); }
+  initialize(options?: { startEmpty?: boolean }) { return this.repository.initialize(options); }
   snapshot(): Promise<LedgerSnapshot> { return this.repository.getSnapshot(); }
   subscribe(listener: () => void): () => void { return this.repository.subscribe(listener); }
   addProduct(input: NewProduct) { return this.repository.addProduct(input); }

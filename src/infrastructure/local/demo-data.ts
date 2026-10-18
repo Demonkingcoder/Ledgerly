@@ -95,14 +95,14 @@ const demoStockMovements: StockMovement[] = [
 
 const settings: BusinessSettings = {
   id: 'business', businessName: 'Greenleaf General Store', phone: '+91 755 410 2211', address: 'Bhopal, Madhya Pradesh',
-  currency: 'INR', taxEnabled: false, taxRateBps: 0, defaultReorderPoint: 10, theme: 'light', demoData: true, updatedAt: atDay(0),
+  currency: 'INR', taxEnabled: false, taxRateBps: 0, defaultReorderPoint: 10, theme: 'light', demoData: true, setupComplete: true, checklistDismissed: false, updatedAt: atDay(0),
 };
 const demoAuditEvents: AuditEvent[] = [];
 
 export const emptySnapshot = (): LedgerSnapshot => ({
   products: [], categories: [], customers: [], suppliers: [], sales: [], saleItems: [], purchases: [], purchaseItems: [],
   payments: [], stockMovements: [], auditEvents: [],
-  settings: { id: 'business', businessName: 'My Shop', phone: '', address: '', currency: 'INR', taxEnabled: false, taxRateBps: 0, defaultReorderPoint: 10, theme: 'light', demoData: false, updatedAt: new Date().toISOString() },
+  settings: { id: 'business', businessName: 'My Shop', phone: '', address: '', currency: 'INR', taxEnabled: false, taxRateBps: 0, defaultReorderPoint: 10, theme: 'light', demoData: false, setupComplete: false, checklistDismissed: false, updatedAt: new Date().toISOString() },
 });
 
 export const makeDemoSnapshot = (): LedgerSnapshot => ({

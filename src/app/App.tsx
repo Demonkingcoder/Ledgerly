@@ -2,10 +2,13 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import {
   BarChart3, Boxes, ChevronLeft, CircleHelp, House, Menu, Package, Settings2, ShieldCheck,
-  ShoppingCart, Sparkles, Store, Users, X,
+  ShoppingCart, Sparkles, Store, Users, X, MessageSquareText, ArrowRight,
 } from 'lucide-react';
 import { useLedger } from './ledger-context';
 import { cloudConnectionConfigured } from './composition';
+import { useToast } from '../components/toast';
+import { FeedbackDialog } from '../components/FeedbackDialog';
+import { Button, FormError, TextInput } from '../components/ui';
 
 const nav = [
   { label: 'Overview', to: '/', icon: House },
@@ -23,13 +26,19 @@ function routeTitle(pathname: string) {
 }
 
 export function AppLayout() {
-  const { snapshot, ready, error } = useLedger();
+  const { snapshot, ready, error, service } = useLedger();
+  const notify = useToast();
   const [mobileNav, setMobileNav] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [mobileViewport, setMobileViewport] = useState(() => window.matchMedia('(max-width: 980px)').matches);
   const sidebarRef = useRef<HTMLElement>(null);
   const mainRef = useRef<HTMLElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const wasMobileNavOpen = useRef(false);
+  const [businessName, setBusinessName] = useState('');
+  const [setupChoice, setSetupChoice] = useState<'empty' | 'sample'>('empty');
+  const [setupBusy, setSetupBusy] = useState(false);
+  const [setupError, setSetupError] = useState('');
   const location = useLocation();
   const title = routeTitle(location.pathname);
 
@@ -80,6 +89,29 @@ export function AppLayout() {
 
   if (!ready) return <main className="boot-screen"><div className="brand-mark">L</div><p>Opening your local workspace…</p></main>;
   if (error) return <main className="storage-error"><div className="brand-mark">L</div><h1>Your local records could not be opened</h1><p>{error}</p><p className="muted">Your records have not been cleared. Try reopening Ledgerly in a browser that allows local site storage.</p></main>;
+  if (!snapshot.settings.setupComplete) return <main className="setup-screen"><section className="setup-card">
+    <div className="setup-brand"><div className="brand-mark"><Store size={19} /></div><div><strong>ledgerly</strong><small>Business, clearly.</small></div></div>
+    <p className="eyebrow">A CLEARER WAY TO RUN YOUR SHOP</p><h1>Let’s set up your workspace</h1><p className="setup-description">Choose how you’d like to begin. Your records are saved in this browser and stay on this device.</p>
+    <form className="form-layout one-column" onSubmit={async (event) => {
+      event.preventDefault(); setSetupError(''); setSetupBusy(true);
+      try {
+        if (setupChoice === 'sample') await service.resetDemoData();
+        const current = (await service.snapshot()).settings;
+        await service.updateSettings({ ...current, businessName: businessName.trim() || current.businessName, demoData: setupChoice === 'sample', setupComplete: true, checklistDismissed: false });
+        notify(setupChoice === 'sample' ? 'Sample workspace is ready. It is marked as demo data.' : 'Your empty workspace is ready. Add your first product to begin.');
+      } catch (reason) { setSetupError(reason instanceof Error ? reason.message : 'Could not finish setting up this workspace.'); }
+      finally { setSetupBusy(false); }
+    }}>
+      <label className="field"><span>Business name <small>Optional</small></span><TextInput autoFocus maxLength={140} value={businessName} onChange={(event) => setBusinessName(event.target.value)} placeholder="e.g. Greenleaf General Store" /></label>
+      <div className="setup-options" aria-label="Choose workspace starting data">
+        <button type="button" aria-pressed={setupChoice === 'empty'} className={`setup-option ${setupChoice === 'empty' ? 'setup-option-selected' : ''}`} onClick={() => setSetupChoice('empty')}><span className="setup-option-icon">＋</span><span><strong>Start with an empty workspace</strong><small>Add your own products and records when you’re ready.</small></span></button>
+        <button type="button" aria-pressed={setupChoice === 'sample'} className={`setup-option ${setupChoice === 'sample' ? 'setup-option-selected' : ''}`} onClick={() => setSetupChoice('sample')}><span className="setup-option-icon">✦</span><span><strong>Explore sample data</strong><small>Use clearly marked examples to explore Ledgerly.</small></span></button>
+      </div>
+      <p className="setup-storage"><ShieldCheck size={16} /> Saved in this browser. Back up your records from Settings; they do not sync between devices.</p>
+      <FormError message={setupError} />
+      <Button type="submit" disabled={setupBusy} className="setup-submit">{setupBusy ? 'Preparing workspace…' : 'Continue'}<ArrowRight size={16} /></Button>
+    </form>
+  </section></main>;
 
   return <div className="app-frame">
     {mobileNav && <button className="mobile-scrim" aria-label="Close navigation" onClick={() => setMobileNav(false)} />}
@@ -105,9 +137,10 @@ export function AppLayout() {
       </div>
     </aside>
     <main ref={mainRef} className="main-area">
-      <header className="topbar"><div className="topbar-title"><button ref={menuButtonRef} className="icon-button mobile-menu" aria-label="Open navigation" aria-expanded={mobileViewport ? mobileNav : undefined} onClick={() => setMobileNav(true)}><Menu size={19} /></button><span>Workspace</span><i>·</i><strong>{title}</strong></div><div className="topbar-actions"><span className="connection-pill"><i />{cloudConnectionConfigured ? 'Local mode · sync not active' : 'Local mode'}</span><span className="top-avatar">{snapshot.settings.businessName.slice(0, 1).toUpperCase()}</span></div></header>
+      <header className="topbar"><div className="topbar-title"><button ref={menuButtonRef} className="icon-button mobile-menu" aria-label="Open navigation" aria-expanded={mobileViewport ? mobileNav : undefined} onClick={() => setMobileNav(true)}><Menu size={19} /></button><span>Workspace</span><i>·</i><strong>{title}</strong></div><div className="topbar-actions"><span className="connection-pill"><i />{cloudConnectionConfigured ? 'Local mode · sync not active' : navigator.onLine ? 'Saved on this device' : 'Offline · records available'}</span><Button variant="quiet" size="sm" icon={MessageSquareText} className="feedback-trigger" onClick={() => setFeedbackOpen(true)}>Send feedback</Button><span className="top-avatar" aria-label={snapshot.settings.businessName}>{snapshot.settings.businessName.slice(0, 1).toUpperCase()}</span></div></header>
       <div className="page-content"><Outlet /></div>
-      <footer className="app-footer"><span>Ledgerly <i>·</i> Local-first retail management</span><span><CircleHelp size={13} /> Your records stay in this browser</span></footer>
+      <footer className="app-footer"><span>Ledgerly <i>·</i> Local-first retail management</span><button type="button" onClick={() => setFeedbackOpen(true)}><MessageSquareText size={14} /> Send feedback</button><span><CircleHelp size={13} /> Your records stay in this browser</span></footer>
     </main>
+    {feedbackOpen && <FeedbackDialog onClose={() => setFeedbackOpen(false)} />}
   </div>;
 }

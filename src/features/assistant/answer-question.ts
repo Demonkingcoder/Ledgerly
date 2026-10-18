@@ -30,10 +30,16 @@ export function answerBusinessQuestion(question: string, snapshot: LedgerSnapsho
   }
 
   if (/best|top|popular|selling product|products sold/.test(query)) {
-    const products = topProducts(snapshot, 3);
+    const thisWeek = /this week|last 7 days|past 7 days/.test(query);
+    const rangeStart = new Date();
+    if (thisWeek) rangeStart.setDate(rangeStart.getDate() - 6);
+    const saleIds = thisWeek
+      ? new Set(snapshot.sales.filter((sale) => new Date(sale.createdAt) >= rangeStart).map((sale) => sale.id))
+      : undefined;
+    const products = topProducts(snapshot, 3, saleIds);
     return products.length
-      ? `Top products by units sold: ${products.map((product, index) => `${index + 1}. ${product.name} (${product.quantity} units)`).join('; ')}.`
-      : 'No sales have been recorded yet, so there is no product ranking.';
+      ? `${thisWeek ? 'Top products by units sold in the last 7 days' : 'Top products by units sold'}: ${products.map((product, index) => `${index + 1}. ${product.name} (${product.quantity} units)`).join('; ')}.`
+      : `No sales ${thisWeek ? 'in the last 7 days' : 'have'} been recorded, so there is no product ranking.`;
   }
 
   if (/sales|revenue|sold/.test(query)) {

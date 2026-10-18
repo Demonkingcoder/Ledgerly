@@ -1,4 +1,4 @@
-import { useEffect, useRef, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useRef, type FormEvent, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
 import { X, type LucideIcon } from 'lucide-react';
 
 export function Button({
@@ -82,6 +82,17 @@ export function Modal({ title, description, onClose, children, wide = false }: {
   </div>;
 }
 
+export function ConfirmDialog({
+  title, description, onClose, onConfirm, confirmLabel = 'Confirm', workingLabel = 'Saving…', danger = false, busy = false,
+}: {
+  title: string; description: string; onClose: () => void; onConfirm: () => void | Promise<void>;
+  confirmLabel?: string; workingLabel?: string; danger?: boolean; busy?: boolean;
+}) {
+  return <Modal title={title} description={description} onClose={onClose}>
+    <div className="form-actions"><Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button variant={danger ? 'danger' : 'primary'} onClick={() => void onConfirm()} disabled={busy}>{busy ? workingLabel : confirmLabel}</Button></div>
+  </Modal>;
+}
+
 export function SearchInput({ value, onChange, placeholder = 'Search...' }: { value: string; onChange: (value: string) => void; placeholder?: string }) {
   return <label className="search-input"><span className="sr-only">Search</span><input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} /></label>;
 }
@@ -92,6 +103,22 @@ export function FormActions({ onCancel, submitText, disabled = false }: { onCanc
 
 export function FormError({ message }: { message: string }) {
   return message ? <p className="form-error" role="alert">{message}</p> : null;
+}
+
+export function Field({ label, hint, className = '', children }: { label: string; hint?: string; className?: string; children: ReactNode }) {
+  return <label className={`field ${className}`}><span>{label}{hint && <small>{hint}</small>}</span>{children}</label>;
+}
+
+export function TextInput(props: InputHTMLAttributes<HTMLInputElement>) {
+  return <input {...props} className={`control ${props.className ?? ''}`} />;
+}
+
+export function SelectInput(props: SelectHTMLAttributes<HTMLSelectElement>) {
+  return <select {...props} className={`control ${props.className ?? ''}`} />;
+}
+
+export function TextAreaInput(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return <textarea {...props} className={`control ${props.className ?? ''}`} />;
 }
 
 export function submitForm(handler: () => Promise<void>) {

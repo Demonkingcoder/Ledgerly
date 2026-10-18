@@ -24,9 +24,10 @@ export function inventoryValueMinor(snapshot: LedgerSnapshot): number {
   return snapshot.products.filter((product) => !product.archived).reduce((sum, product) => sum + product.quantity * product.costMinor, 0);
 }
 
-export function topProducts(snapshot: LedgerSnapshot, limit = 5): Array<{ productId: string; name: string; quantity: number; salesMinor: number }> {
+export function topProducts(snapshot: LedgerSnapshot, limit = 5, saleIds?: ReadonlySet<string>): Array<{ productId: string; name: string; quantity: number; salesMinor: number }> {
   const totals = new Map<string, { name: string; quantity: number; salesMinor: number }>();
   for (const item of snapshot.saleItems) {
+    if (saleIds && !saleIds.has(item.saleId)) continue;
     const row = totals.get(item.productId) ?? { name: item.productName, quantity: 0, salesMinor: 0 };
     row.quantity += item.quantity;
     row.salesMinor += item.lineTotalMinor;

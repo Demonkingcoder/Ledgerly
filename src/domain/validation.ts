@@ -56,7 +56,8 @@ export const stockMovementSchema = z.object({
 export const settingsSchema = z.object({
   id: z.literal('business'), businessName: z.string().trim().min(1).max(140), phone: z.string().max(40), address: z.string().max(300),
   currency: z.literal('INR'), taxEnabled: z.boolean(), taxRateBps: z.number().int().min(0).max(10000),
-  defaultReorderPoint: z.number().int().min(0).max(100000), theme: z.enum(['light', 'system']), demoData: z.boolean(), updatedAt: isoDate,
+  defaultReorderPoint: z.number().int().min(0).max(100000), theme: z.enum(['light', 'system']), demoData: z.boolean(),
+  setupComplete: z.boolean().default(true), checklistDismissed: z.boolean().default(true), updatedAt: isoDate,
 });
 export const auditEventSchema = z.object({ id, eventType: z.string().min(1).max(80), entityType: z.string().min(1).max(80), entityId: id, summary: z.string().min(1).max(240), createdAt: isoDate });
 

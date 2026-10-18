@@ -16,7 +16,7 @@ export type NewSupplier = Pick<Supplier, 'name' | 'phone' | 'email' | 'notes'>;
 export type NewCategory = Pick<Category, 'name'>;
 
 export interface LedgerRepository {
-  initialize(): Promise<void>;
+  initialize(options?: { startEmpty?: boolean }): Promise<void>;
   getSnapshot(): Promise<LedgerSnapshot>;
   subscribe(listener: () => void): () => void;
   addProduct(input: NewProduct): Promise<Product>;

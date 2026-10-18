@@ -4,7 +4,7 @@ import { useLedger } from '../../app/ledger-context';
 import { PageHeading, Panel } from '../../components/ui';
 import { answerBusinessQuestion } from './answer-question';
 
-const prompts = ['What were my sales this week?', 'Which products need reordering?', 'How much do customers owe me?', 'What sold best?'];
+const prompts = ['What sold best this week?', 'Which products need reordering?', 'How much do customers owe?', 'What were today’s sales?', 'Summarize my recent business performance.'];
 
 export function AssistantPage() {
   const { snapshot } = useLedger();

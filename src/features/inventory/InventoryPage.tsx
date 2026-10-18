@@ -2,7 +2,7 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { Archive, History, Pencil, Plus, SlidersHorizontal } from 'lucide-react';
 import { useLedger } from '../../app/ledger-context';
 import { useToast } from '../../components/toast';
-import { Button, EmptyState, FormActions, FormError, Modal, PageHeading, Panel, SearchInput } from '../../components/ui';
+import { Button, ConfirmDialog, EmptyState, FormActions, FormError, Modal, PageHeading, Panel, SearchInput, StatusBadge } from '../../components/ui';
 import type { Product } from '../../domain/models';
 import { formatMoney, parseMoneyInput } from '../../domain/money';
 import { formatDate } from '../../shared/format';
@@ -15,40 +15,53 @@ export function InventoryPage() {
   const notify = useToast();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('active');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [stockFilter, setStockFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('name');
   const [showProduct, setShowProduct] = useState(false);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [adjustProduct, setAdjustProduct] = useState<Product | null>(null);
   const [historyProduct, setHistoryProduct] = useState<Product | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<Product | null>(null);
   const visibleProducts = useMemo(() => snapshot.products.filter((product) => {
     const matchesSearch = `${product.name} ${product.sku} ${product.categoryName}`.toLowerCase().includes(search.toLowerCase());
     const matchesFilter = filter === 'all' || (filter === 'active' && !product.archived) || (filter === 'low' && !product.archived && product.quantity <= product.reorderPoint) || (filter === 'archived' && product.archived);
-    return matchesSearch && matchesFilter;
-  }).sort((a, b) => a.name.localeCompare(b.name)), [snapshot.products, search, filter]);
+    const matchesCategory = categoryFilter === 'all' || product.categoryName === categoryFilter;
+    const matchesStock = stockFilter === 'all' || (stockFilter === 'out' && product.quantity === 0) || (stockFilter === 'low' && product.quantity > 0 && product.quantity <= product.reorderPoint) || (stockFilter === 'healthy' && product.quantity > product.reorderPoint);
+    return matchesSearch && matchesFilter && matchesCategory && matchesStock;
+  }).sort((a, b) => sortBy === 'quantity-asc' ? a.quantity - b.quantity : sortBy === 'quantity-desc' ? b.quantity - a.quantity : sortBy === 'value-desc' ? b.costMinor * b.quantity - a.costMinor * a.quantity : a.name.localeCompare(b.name)), [snapshot.products, search, filter, categoryFilter, stockFilter, sortBy]);
   const active = snapshot.products.filter((product) => !product.archived);
   const stockValue = active.reduce((sum, product) => sum + product.costMinor * product.quantity, 0);
   const low = active.filter((product) => product.quantity <= product.reorderPoint).length;
   const margin = active.length ? active.reduce((sum, product) => sum + (product.priceMinor > 0 ? (product.priceMinor - product.costMinor) * product.quantity : 0), 0) : 0;
 
   async function archive(product: Product) {
-    if (!window.confirm(`Archive ${product.name}? It will stay on existing sale and purchase records.`)) return;
-    try { await service.archiveProduct(product.id); notify(`${product.name} archived. Historical records are preserved.`); }
+    try { await service.archiveProduct(product.id); notify(`${product.name} archived. Historical records are preserved.`); setArchiveTarget(null); }
     catch (reason) { notify(reason instanceof Error ? reason.message : 'Could not archive product.', 'error'); }
   }
 
   return <>
     <PageHeading eyebrow="PRODUCTS & STOCK" title="Inventory" description="Know what is on hand, what it costs, and what to replenish." actions={<Button icon={Plus} onClick={() => setShowProduct(true)}>Add product</Button>} />
     <div className="mini-stats"><div><span>Active products</span><strong>{active.length}</strong></div><div><span>Inventory at cost</span><strong>{formatMoney(stockValue)}</strong></div><div><span>Estimated stock margin</span><strong>{formatMoney(margin)}</strong></div><div><span>At reorder point</span><strong className={low ? 'text-warning' : ''}>{low}</strong></div></div>
-    <Panel className="table-panel"><div className="toolbar"><SearchInput value={search} onChange={setSearch} placeholder="Search name, SKU or category" /><label className="select-label"><SlidersHorizontal size={15} /><select value={filter} onChange={(event) => setFilter(event.target.value)}><option value="active">Active products</option><option value="all">All products</option><option value="low">At reorder point</option><option value="archived">Archived</option></select></label></div>
-      {visibleProducts.length === 0 ? <EmptyState title={snapshot.products.length ? 'No matching products' : 'Start with your product list'} description={snapshot.products.length ? 'Adjust your search or filter.' : 'Add the items you sell to start tracking stock and margins.'} action={!snapshot.products.length && <Button icon={Plus} onClick={() => setShowProduct(true)}>Add product</Button>} /> : <div className="table-scroll"><table><thead><tr><th>Product</th><th>Category</th><th>Cost</th><th>Price</th><th>Margin</th><th>On hand</th><th>Stock value</th><th className="align-right">Actions</th></tr></thead><tbody>{visibleProducts.map((product) => {
+    <Panel className="table-panel"><div className="toolbar inventory-toolbar"><SearchInput value={search} onChange={setSearch} placeholder="Search name, SKU or category" /><label className="select-label"><span className="sr-only">Filter products</span><select value={filter} onChange={(event) => setFilter(event.target.value)}><option value="active">Active products</option><option value="all">All products</option><option value="archived">Archived</option></select></label><label className="select-label"><span className="sr-only">Filter category</span><select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}><option value="all">All categories</option>{[...new Set(snapshot.products.map((product) => product.categoryName).filter(Boolean))].sort().map((category) => <option key={category} value={category}>{category}</option>)}</select></label><label className="select-label"><span className="sr-only">Filter stock status</span><select value={stockFilter} onChange={(event) => setStockFilter(event.target.value)}><option value="all">All stock</option><option value="healthy">In stock</option><option value="low">Low stock</option><option value="out">Out of stock</option></select></label><label className="select-label"><span className="sr-only">Sort products</span><select value={sortBy} onChange={(event) => setSortBy(event.target.value)}><option value="name">Sort: name</option><option value="quantity-asc">Stock: lowest first</option><option value="quantity-desc">Stock: highest first</option><option value="value-desc">Value: highest first</option></select></label></div>
+      {visibleProducts.length === 0 ? <EmptyState title={snapshot.products.length ? 'No matching products' : 'Start with your product list'} description={snapshot.products.length ? 'Adjust your search or filter.' : 'Add the items you sell to start tracking stock and margins.'} action={!snapshot.products.length && <Button icon={Plus} onClick={() => setShowProduct(true)}>Add product</Button>} /> : <>
+        <div className="table-scroll inventory-table"><table><thead><tr><th>Product</th><th>Category</th><th>Cost</th><th>Price</th><th>Margin</th><th>On hand</th><th>Stock value</th><th className="align-right">Actions</th></tr></thead><tbody>{visibleProducts.map((product) => {
         const isLow = !product.archived && product.quantity <= product.reorderPoint;
         const marginPct = product.priceMinor > 0 ? Math.round(((product.priceMinor - product.costMinor) / product.priceMinor) * 100) : 0;
-        return <tr key={product.id}><td><div className="product-cell"><span className="product-mini">{product.name.slice(0, 1)}</span><div><strong className="table-primary">{product.name}</strong><small className="table-subline">{product.sku || 'No SKU'} · per {product.unit}</small></div></div></td><td>{product.categoryName}</td><td>{formatMoney(product.costMinor)}</td><td>{formatMoney(product.priceMinor)}</td><td><span className="margin-value">{marginPct}%</span></td><td><strong>{product.quantity}</strong> <span className="muted">{product.unit}</span><small className="table-subline">Reorder at {product.reorderPoint}{isLow && <span className="low-inline"> · {product.quantity === 0 ? 'Out' : 'Low'}</span>}</small></td><td>{formatMoney(product.costMinor * product.quantity)}</td><td className="align-right row-actions"><Button variant="quiet" size="sm" icon={History} onClick={() => setHistoryProduct(product)}>History</Button><Button variant="quiet" size="sm" icon={SlidersHorizontal} onClick={() => setAdjustProduct(product)} disabled={product.archived}>Adjust</Button><Button variant="quiet" size="sm" icon={Pencil} onClick={() => setEditProduct(product)}>Edit</Button>{!product.archived && <Button variant="quiet" size="sm" icon={Archive} onClick={() => void archive(product)}>Archive</Button>}</td></tr>;
-      })}</tbody></table></div>}
+        return <tr key={product.id}><td><div className="product-cell"><span className="product-mini">{product.name.slice(0, 1)}</span><div><strong className="table-primary">{product.name}</strong><small className="table-subline">{product.sku || 'No SKU'} · per {product.unit}</small></div></div></td><td>{product.categoryName}</td><td>{formatMoney(product.costMinor)}</td><td>{formatMoney(product.priceMinor)}</td><td><span className="margin-value">{marginPct}%</span></td><td><strong>{product.quantity}</strong> <span className="muted">{product.unit}</span><small className="table-subline">Reorder at {product.reorderPoint}{isLow && <span className="low-inline"> · {product.quantity === 0 ? 'Out' : 'Low'}</span>}</small></td><td>{formatMoney(product.costMinor * product.quantity)}</td><td className="align-right row-actions"><Button variant="quiet" size="sm" icon={History} onClick={() => setHistoryProduct(product)}>History</Button><Button variant="quiet" size="sm" icon={SlidersHorizontal} onClick={() => setAdjustProduct(product)} disabled={product.archived}>Adjust</Button><Button variant="quiet" size="sm" icon={Pencil} onClick={() => setEditProduct(product)}>Edit</Button>{!product.archived && <Button variant="quiet" size="sm" icon={Archive} onClick={() => setArchiveTarget(product)}>Archive</Button>}</td></tr>;
+      })}</tbody></table></div>
+        <div className="inventory-mobile-list">{visibleProducts.map((product) => {
+          const isLow = !product.archived && product.quantity <= product.reorderPoint;
+          const marginPct = product.priceMinor > 0 ? Math.round(((product.priceMinor - product.costMinor) / product.priceMinor) * 100) : 0;
+          return <article className="inventory-mobile-card" key={`mobile-${product.id}`}><div className="inventory-mobile-title"><span className="product-mini">{product.name.slice(0, 1)}</span><div><strong>{product.name}</strong><small>{product.sku || 'No SKU'} · {product.categoryName}</small></div><StatusBadge tone={product.archived ? 'neutral' : product.quantity === 0 ? 'danger' : isLow ? 'warning' : 'success'}>{product.archived ? 'Archived' : product.quantity === 0 ? 'Out' : isLow ? 'Low stock' : 'In stock'}</StatusBadge></div><div className="inventory-mobile-metrics"><div><small>On hand</small><strong>{product.quantity} {product.unit}</strong></div><div><small>Cost</small><strong>{formatMoney(product.costMinor)}</strong></div><div><small>Selling price</small><strong>{formatMoney(product.priceMinor)}</strong></div><div><small>Margin</small><strong>{marginPct}%</strong></div></div><div className="inventory-mobile-actions"><Button variant="quiet" size="sm" icon={History} onClick={() => setHistoryProduct(product)}>History</Button><Button variant="quiet" size="sm" icon={SlidersHorizontal} onClick={() => setAdjustProduct(product)} disabled={product.archived}>Adjust stock</Button><Button variant="quiet" size="sm" icon={Pencil} onClick={() => setEditProduct(product)}>Edit</Button>{!product.archived && <Button variant="quiet" size="sm" icon={Archive} onClick={() => setArchiveTarget(product)}>Archive</Button>}</div></article>;
+        })}</div>
+      </>}
     </Panel>
     {showProduct && <ProductForm onClose={() => setShowProduct(false)} onSaved={() => { setShowProduct(false); notify('Product added with opening stock recorded.'); }} />}
     {editProduct && <ProductForm product={editProduct} onClose={() => setEditProduct(null)} onSaved={() => { setEditProduct(null); notify('Product details updated.'); }} />}
     {adjustProduct && <StockAdjustment product={adjustProduct} onClose={() => setAdjustProduct(null)} onSaved={() => { setAdjustProduct(null); notify('Stock adjustment saved to history.'); }} />}
     {historyProduct && <MovementHistory product={historyProduct} onClose={() => setHistoryProduct(null)} />}
+    {archiveTarget && <ConfirmDialog title={`Archive ${archiveTarget.name}?`} description="The product will stay on existing sale and purchase records." onClose={() => setArchiveTarget(null)} onConfirm={() => void archive(archiveTarget)} confirmLabel="Archive product" danger />}
   </>;
 }
 

@@ -59,4 +59,17 @@ describe('derived balances and assistant answers', () => {
     expect(answerBusinessQuestion('what sold best?', snapshot)).toContain('A4 Copier Paper');
     expect(answerBusinessQuestion('what is my horoscope?', snapshot)).toContain('not have enough information');
   });
+
+  it('ranks best-selling products for the requested week instead of all time', () => {
+    const snapshot = makeDemoSnapshot();
+    const oldDate = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString();
+    snapshot.sales = snapshot.sales.map((sale) => ({ ...sale, createdAt: oldDate }));
+    const recentSale = { ...snapshot.sales[0], id: 'sale-recent', invoiceNo: 'INV-RECENT', operationKey: 'recent-sale', createdAt: new Date().toISOString() };
+    snapshot.sales.push(recentSale);
+    snapshot.saleItems.push({ ...snapshot.saleItems.find((item) => item.productId === 'prod-roll')!, id: 'item-recent', saleId: recentSale.id, quantity: 20 });
+
+    expect(answerBusinessQuestion('What sold best this week?', snapshot)).toContain('Thermal Receipt Roll (20 units)');
+    expect(answerBusinessQuestion('What sold best this week?', snapshot)).toContain('last 7 days');
+    expect(answerBusinessQuestion('What sold best?', snapshot)).toContain('A4 Copier Paper');
+  });
 });

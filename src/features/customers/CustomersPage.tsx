@@ -2,7 +2,7 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { Archive, Pencil, Plus, UserRound, Wallet } from 'lucide-react';
 import { useLedger } from '../../app/ledger-context';
 import { useToast } from '../../components/toast';
-import { Button, EmptyState, FormActions, FormError, Modal, PageHeading, Panel, SearchInput, StatusBadge } from '../../components/ui';
+import { Button, ConfirmDialog, EmptyState, FormActions, FormError, Modal, PageHeading, Panel, SearchInput, StatusBadge } from '../../components/ui';
 import { customerBalances } from '../../domain/calculations';
 import type { Customer, PaymentMethod } from '../../domain/models';
 import { formatMoney, parseMoneyInput } from '../../domain/money';
@@ -21,12 +21,12 @@ export function CustomersPage() {
   const [edit, setEdit] = useState<Customer | null>(null);
   const [pay, setPay] = useState<Customer | null>(null);
   const [history, setHistory] = useState<Customer | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<Customer | null>(null);
   const rows = useMemo(() => snapshot.customers.filter((customer) => (includeArchived || !customer.archived) && `${customer.name} ${customer.address} ${customer.phone} ${customer.email}`.toLowerCase().includes(search.toLowerCase())).sort((a, b) => a.name.localeCompare(b.name)), [snapshot.customers, includeArchived, search]);
   const dueTotal = balances.reduce((sum, row) => sum + row.balanceMinor, 0);
 
   async function archive(customer: Customer) {
-    if (!window.confirm(`Archive ${customer.name}? Their sales and payment history will remain available.`)) return;
-    try { await service.archiveCustomer(customer.id); notify(`${customer.name} archived.`); }
+    try { await service.archiveCustomer(customer.id); notify(`${customer.name} archived.`); setArchiveTarget(null); }
     catch (reason) { notify(reason instanceof Error ? reason.message : 'Could not archive customer.', 'error'); }
   }
 
@@ -38,13 +38,14 @@ export function CustomersPage() {
         const balance = balances.find((row) => row.partyId === customer.id);
         const customerSales = snapshot.sales.filter((sale) => sale.customerId === customer.id);
         const total = customerSales.reduce((sum, sale) => sum + sale.totalMinor, 0);
-        return <tr key={customer.id}><td><div className="product-cell"><span className="person-avatar">{customer.name.slice(0, 1).toUpperCase()}</span><div><strong className="table-primary">{customer.name}</strong><small className="table-subline">{customer.notes || (customerSales.at(-1) ? `Last purchase ${formatDate(customerSales.at(-1)!.createdAt)}` : 'No purchase yet')}</small></div></div></td><td><span>{customer.phone || '—'}</span>{customer.email && <small className="table-subline">{customer.email}</small>}{customer.address && <small className="table-subline">{customer.address}</small>}</td><td>{customerSales.length}</td><td>{formatMoney(total)}</td><td><strong className={balance?.balanceMinor ? 'text-warning' : ''}>{formatMoney(balance?.balanceMinor ?? 0)}</strong></td><td><StatusBadge tone={customer.archived ? 'neutral' : 'success'}>{customer.archived ? 'Archived' : 'Active'}</StatusBadge></td><td className="align-right row-actions"><Button variant="quiet" size="sm" icon={UserRound} onClick={() => setHistory(customer)}>History</Button>{Boolean(balance?.balanceMinor) && <Button variant="secondary" size="sm" icon={Wallet} onClick={() => setPay(customer)}>Record payment</Button>}<Button variant="quiet" size="sm" icon={Pencil} onClick={() => setEdit(customer)}>Edit</Button>{!customer.archived && <Button variant="quiet" size="sm" icon={Archive} onClick={() => void archive(customer)}>Archive</Button>}</td></tr>;
+        return <tr key={customer.id}><td><div className="product-cell"><span className="person-avatar">{customer.name.slice(0, 1).toUpperCase()}</span><div><strong className="table-primary">{customer.name}</strong><small className="table-subline">{customer.notes || (customerSales.at(-1) ? `Last purchase ${formatDate(customerSales.at(-1)!.createdAt)}` : 'No purchase yet')}</small></div></div></td><td><span>{customer.phone || '—'}</span>{customer.email && <small className="table-subline">{customer.email}</small>}{customer.address && <small className="table-subline">{customer.address}</small>}</td><td>{customerSales.length}</td><td>{formatMoney(total)}</td><td><strong className={balance?.balanceMinor ? 'text-warning' : ''}>{formatMoney(balance?.balanceMinor ?? 0)}</strong></td><td><StatusBadge tone={customer.archived ? 'neutral' : 'success'}>{customer.archived ? 'Archived' : 'Active'}</StatusBadge></td><td className="align-right row-actions"><Button variant="quiet" size="sm" icon={UserRound} onClick={() => setHistory(customer)}>History</Button>{Boolean(balance?.balanceMinor) && <Button variant="secondary" size="sm" icon={Wallet} onClick={() => setPay(customer)}>Record payment</Button>}<Button variant="quiet" size="sm" icon={Pencil} onClick={() => setEdit(customer)}>Edit</Button>{!customer.archived && <Button variant="quiet" size="sm" icon={Archive} onClick={() => setArchiveTarget(customer)}>Archive</Button>}</td></tr>;
       })}</tbody></table></div>}
     </Panel>
     {showForm && <CustomerForm onClose={() => setShowForm(false)} onSaved={() => { setShowForm(false); notify('Customer added.'); }} />}
     {edit && <CustomerForm customer={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); notify('Customer details updated.'); }} />}
     {pay && <PartyPaymentModal customer={pay} onClose={() => setPay(null)} onSaved={() => { setPay(null); notify('Customer payment recorded.'); }} />}
     {history && <CustomerHistory customer={history} onClose={() => setHistory(null)} />}
+    {archiveTarget && <ConfirmDialog title={`Archive ${archiveTarget.name}?`} description="Their sales and payment history will remain available." onClose={() => setArchiveTarget(null)} onConfirm={() => void archive(archiveTarget)} confirmLabel="Archive customer" danger />}
   </>;
 }
 
@@ -88,5 +89,6 @@ function PartyPaymentModal({ customer, onClose, onSaved }: { customer: Customer;
 function CustomerHistory({ customer, onClose }: { customer: Customer; onClose: () => void }) {
   const { snapshot } = useLedger();
   const sales = snapshot.sales.filter((sale) => sale.customerId === customer.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  return <Modal title="Customer history" description={customer.name} onClose={onClose} wide>{sales.length ? <div className="table-scroll"><table><thead><tr><th>Invoice</th><th>Date</th><th>Items</th><th>Total</th><th>Payment status</th></tr></thead><tbody>{sales.map((sale) => { const paid = snapshot.payments.filter((payment) => payment.saleId === sale.id && payment.direction === 'in').reduce((sum, payment) => sum + payment.amountMinor, 0); return <tr key={sale.id}><td>{sale.invoiceNo}</td><td>{formatDate(sale.createdAt)}</td><td>{snapshot.saleItems.filter((item) => item.saleId === sale.id).reduce((sum, item) => sum + item.quantity, 0)}</td><td>{formatMoney(sale.totalMinor)}</td><td>{formatMoney(paid)} paid</td></tr>; })}</tbody></table></div> : <p className="muted">No sales are linked to this customer yet.</p>}<div className="receipt-totals"><div className="receipt-total"><span>Total purchases</span><strong>{formatMoney(sales.reduce((sum, sale) => sum + sale.totalMinor, 0))}</strong></div></div></Modal>;
+  const payments = snapshot.payments.filter((payment) => payment.partyType === 'customer' && payment.partyId === customer.id && payment.direction === 'in').sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return <Modal title="Customer history" description={`${customer.name}${customer.phone ? ` · ${customer.phone}` : ''}`} onClose={onClose} wide>{sales.length ? <div className="table-scroll"><table><thead><tr><th>Invoice</th><th>Date</th><th>Items</th><th>Total</th><th>Paid</th><th>Balance</th></tr></thead><tbody>{sales.map((sale) => { const paid = snapshot.payments.filter((payment) => payment.saleId === sale.id && payment.direction === 'in').reduce((sum, payment) => sum + payment.amountMinor, 0); return <tr key={sale.id}><td>{sale.invoiceNo}</td><td>{formatDate(sale.createdAt)}</td><td>{snapshot.saleItems.filter((item) => item.saleId === sale.id).reduce((sum, item) => sum + item.quantity, 0)}</td><td>{formatMoney(sale.totalMinor)}</td><td>{formatMoney(paid)}</td><td>{formatMoney(Math.max(0, sale.totalMinor - paid))}</td></tr>; })}</tbody></table></div> : <p className="muted">No sales are linked to this customer yet.</p>}<div className="receipt-totals"><div className="receipt-total"><span>Total purchases</span><strong>{formatMoney(sales.reduce((sum, sale) => sum + sale.totalMinor, 0))}</strong></div></div><h3 className="history-section-title">Payment history</h3>{payments.length ? <div className="table-scroll"><table><thead><tr><th>Date</th><th>For</th><th>Method</th><th className="align-right">Received</th></tr></thead><tbody>{payments.map((payment) => { const sale = snapshot.sales.find((row) => row.id === payment.saleId); return <tr key={payment.id}><td>{formatDate(payment.createdAt)}</td><td>{sale?.invoiceNo ?? 'Customer account'}</td><td>{payment.method.toUpperCase()}</td><td className="align-right">{formatMoney(payment.amountMinor)}</td></tr>; })}</tbody></table></div> : <p className="muted">No customer payments recorded yet.</p>}</Modal>;
 }

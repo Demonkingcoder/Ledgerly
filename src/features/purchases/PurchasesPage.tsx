@@ -2,7 +2,8 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { Check, Plus, Truck, X } from 'lucide-react';
 import { useLedger } from '../../app/ledger-context';
 import { useToast } from '../../components/toast';
-import { Button, EmptyState, FormActions, FormError, Modal, PageHeading, Panel, SearchInput, StatusBadge } from '../../components/ui';
+import { Button, ConfirmDialog, EmptyState, FormActions, FormError, Modal, PageHeading, Panel, SearchInput, StatusBadge } from '../../components/ui';
+import { purchaseBalance } from '../../domain/calculations';
 import type { PaymentMethod, Purchase } from '../../domain/models';
 import { formatMoney, parseMoneyInput } from '../../domain/money';
 import { formatDate } from '../../shared/format';
@@ -16,6 +17,7 @@ export function PurchasesPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [showNew, setShowNew] = useState(false);
   const [detail, setDetail] = useState<Purchase | null>(null);
+  const [confirmation, setConfirmation] = useState<{ purchase: Purchase; action: 'receive' | 'cancel' } | null>(null);
   const [pendingActions, setPendingActions] = useState<Set<string>>(() => new Set());
   const rows = useMemo(() => snapshot.purchases.filter((purchase) => `${purchase.reference} ${purchase.supplierName}`.toLowerCase().includes(search.toLowerCase()) && (statusFilter === 'all' || purchase.status === statusFilter)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [snapshot.purchases, search, statusFilter]);
   const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
@@ -24,16 +26,14 @@ export function PurchasesPage() {
   const payable = snapshot.purchases.filter((purchase) => purchase.status === 'received').reduce((sum, purchase) => sum + Math.max(0, purchase.subtotalMinor - snapshot.payments.filter((payment) => payment.direction === 'out' && payment.purchaseId === purchase.id).reduce((paid, payment) => paid + payment.amountMinor, 0)), 0);
 
   async function receive(purchase: Purchase) {
-    if (!window.confirm(`Receive ${purchase.reference}? This will add the listed quantities to inventory.`)) return;
     setPendingActions((current) => new Set(current).add(purchase.id));
-    try { await service.receivePurchase(purchase.id); notify(`${purchase.reference} received and stock updated.`); }
+    try { await service.receivePurchase(purchase.id); notify(`${purchase.reference} received and stock updated.`); setConfirmation(null); }
     catch (reason) { notify(reason instanceof Error ? reason.message : 'Could not receive purchase.', 'error'); }
     finally { setPendingActions((current) => { const next = new Set(current); next.delete(purchase.id); return next; }); }
   }
   async function cancel(purchase: Purchase) {
-    if (!window.confirm(`Cancel draft ${purchase.reference}? Inventory will not change.`)) return;
     setPendingActions((current) => new Set(current).add(purchase.id));
-    try { await service.cancelPurchase(purchase.id); notify(`${purchase.reference} cancelled.`); }
+    try { await service.cancelPurchase(purchase.id); notify(`${purchase.reference} cancelled.`); setConfirmation(null); }
     catch (reason) { notify(reason instanceof Error ? reason.message : 'Could not cancel purchase.', 'error'); }
     finally { setPendingActions((current) => { const next = new Set(current); next.delete(purchase.id); return next; }); }
   }
@@ -42,14 +42,16 @@ export function PurchasesPage() {
     <PageHeading eyebrow="SUPPLIES & PAYABLES" title="Purchases" description="Track orders, receive stock once, and keep supplier payments clear." actions={<Button icon={Plus} onClick={() => setShowNew(true)}>New purchase</Button>} />
     <div className="mini-stats"><div><span>Purchases this month</span><strong>{formatMoney(receivedMonth)}</strong></div><div><span>Received purchases</span><strong>{snapshot.purchases.filter((purchase) => purchase.status === 'received').length}</strong></div><div><span>Supplier payables</span><strong>{formatMoney(payable)}</strong></div><div><span>All received purchases</span><strong>{formatMoney(receivedTotal)}</strong></div></div>
     <Panel className="table-panel"><div className="toolbar"><SearchInput value={search} onChange={setSearch} placeholder="Search reference or supplier" /><label className="select-label"><span className="sr-only">Filter purchase status</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">All statuses</option><option value="draft">Draft</option><option value="received">Received</option><option value="cancelled">Cancelled</option></select></label></div>
-      {rows.length === 0 ? <EmptyState title={snapshot.purchases.length ? 'No matching purchases' : 'No purchases yet'} description={snapshot.purchases.length ? 'Try another search or filter.' : 'Create a purchase draft, then receive it when goods arrive.'} action={!snapshot.purchases.length && <Button icon={Plus} onClick={() => setShowNew(true)}>Create purchase</Button>} /> : <div className="table-scroll"><table><thead><tr><th>Reference</th><th>Supplier</th><th>Date</th><th>Items</th><th className="align-right">Total</th><th className="align-right">Paid</th><th>Status</th><th className="align-right">Actions</th></tr></thead><tbody>{rows.map((purchase) => {
+      {rows.length === 0 ? <EmptyState title={snapshot.purchases.length ? 'No matching purchases' : 'No purchases yet'} description={snapshot.purchases.length ? 'Try another search or filter.' : 'Create a purchase draft, then receive it when goods arrive.'} action={!snapshot.purchases.length && <Button icon={Plus} onClick={() => setShowNew(true)}>Create purchase</Button>} /> : <div className="table-scroll"><table><thead><tr><th>Reference</th><th>Supplier</th><th>Date</th><th>Items</th><th className="align-right">Total</th><th className="align-right">Paid</th><th className="align-right">Outstanding</th><th>Status</th><th className="align-right">Actions</th></tr></thead><tbody>{rows.map((purchase) => {
         const items = snapshot.purchaseItems.filter((item) => item.purchaseId === purchase.id);
         const paid = snapshot.payments.filter((payment) => payment.direction === 'out' && payment.purchaseId === purchase.id).reduce((sum, payment) => sum + payment.amountMinor, 0);
+        const outstandingAmount = purchase.status === 'received' ? purchaseBalance(purchase, snapshot.payments) : 0;
         const pending = pendingActions.has(purchase.id);
-        return <tr key={purchase.id}><td><button className="table-link" onClick={() => setDetail(purchase)}>{purchase.reference}</button></td><td>{purchase.supplierName}</td><td>{formatDate(purchase.receivedAt ?? purchase.createdAt)}</td><td>{items.reduce((sum, item) => sum + item.quantity, 0)} units</td><td className="align-right">{formatMoney(purchase.subtotalMinor)}</td><td className="align-right">{formatMoney(paid)}</td><td><StatusBadge tone={purchase.status === 'received' ? 'success' : purchase.status === 'cancelled' ? 'neutral' : 'warning'}>{purchase.status[0].toUpperCase() + purchase.status.slice(1)}</StatusBadge></td><td className="align-right row-actions">{purchase.status === 'draft' && <><Button size="sm" icon={Check} disabled={pending} onClick={() => void receive(purchase)}>{pending ? 'Saving…' : 'Receive'}</Button><Button size="sm" variant="quiet" icon={X} disabled={pending} onClick={() => void cancel(purchase)}>Cancel</Button></>}</td></tr>;
+        return <tr key={purchase.id}><td><button className="table-link" onClick={() => setDetail(purchase)}>{purchase.reference}</button></td><td>{purchase.supplierName}</td><td>{formatDate(purchase.receivedAt ?? purchase.createdAt)}</td><td>{items.reduce((sum, item) => sum + item.quantity, 0)} units</td><td className="align-right">{formatMoney(purchase.subtotalMinor)}</td><td className="align-right">{formatMoney(paid)}</td><td className="align-right">{purchase.status === 'received' ? formatMoney(outstandingAmount) : '—'}</td><td><StatusBadge tone={purchase.status === 'received' ? 'success' : purchase.status === 'cancelled' ? 'neutral' : 'warning'}>{purchase.status[0].toUpperCase() + purchase.status.slice(1)}</StatusBadge></td><td className="align-right row-actions">{purchase.status === 'draft' && <><Button size="sm" icon={Check} disabled={pending} onClick={() => setConfirmation({ purchase, action: 'receive' })}>Receive</Button><Button size="sm" variant="quiet" icon={X} disabled={pending} onClick={() => setConfirmation({ purchase, action: 'cancel' })}>Cancel</Button></>}</td></tr>;
       })}</tbody></table></div>}
     </Panel>
     <Panel className="info-panel"><Truck size={17} /><p><strong>Stock changes when a purchase is received.</strong> Draft and cancelled purchases stay in history but do not change on-hand quantities. Receiving the same purchase twice is safely ignored.</p></Panel>
+    {confirmation && <ConfirmDialog title={confirmation.action === 'receive' ? `Receive ${confirmation.purchase.reference}?` : `Cancel draft ${confirmation.purchase.reference}?`} description={confirmation.action === 'receive' ? 'The listed quantities will be added to inventory once.' : 'Inventory will not change when this draft is cancelled.'} onClose={() => setConfirmation(null)} onConfirm={() => confirmation.action === 'receive' ? receive(confirmation.purchase) : cancel(confirmation.purchase)} confirmLabel={confirmation.action === 'receive' ? 'Receive purchase' : 'Cancel draft'} workingLabel={confirmation.action === 'receive' ? 'Receiving…' : 'Cancelling…'} busy={pendingActions.has(confirmation.purchase.id)} danger={confirmation.action === 'cancel'} />}
     {showNew && <PurchaseForm onClose={() => setShowNew(false)} onSaved={(status) => { setShowNew(false); notify(status === 'received' ? 'Purchase received and stock updated.' : 'Purchase draft saved.'); }} />}
     {detail && <PurchaseDetail purchase={detail} onClose={() => setDetail(null)} />}
   </>;
@@ -100,5 +102,7 @@ function PurchaseForm({ onClose, onSaved }: { onClose: () => void; onSaved: (sta
 function PurchaseDetail({ purchase, onClose }: { purchase: Purchase; onClose: () => void }) {
   const { snapshot } = useLedger();
   const items = snapshot.purchaseItems.filter((item) => item.purchaseId === purchase.id);
-  return <Modal title={purchase.reference} description={`${purchase.supplierName} · ${formatDate(purchase.createdAt)}`} onClose={onClose} wide><div className="table-scroll"><table><thead><tr><th>Product</th><th>Quantity</th><th className="align-right">Unit cost</th><th className="align-right">Line total</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td>{item.productName}</td><td>{item.quantity}</td><td className="align-right">{formatMoney(item.unitCostMinor)}</td><td className="align-right">{formatMoney(item.lineTotalMinor)}</td></tr>)}</tbody></table></div><div className="receipt-totals"><div className="receipt-total"><span>Purchase total</span><strong>{formatMoney(purchase.subtotalMinor)}</strong></div><div><span>Status</span><strong>{purchase.status}</strong></div>{purchase.notes && <p>{purchase.notes}</p>}</div></Modal>;
+  const paid = snapshot.payments.filter((payment) => payment.direction === 'out' && payment.purchaseId === purchase.id).reduce((sum, payment) => sum + payment.amountMinor, 0);
+  const outstanding = purchase.status === 'received' ? purchaseBalance(purchase, snapshot.payments) : 0;
+  return <Modal title={purchase.reference} description={`${purchase.supplierName} · ${formatDate(purchase.receivedAt ?? purchase.createdAt)}`} onClose={onClose} wide><div className="table-scroll"><table><thead><tr><th>Product</th><th>Quantity</th><th className="align-right">Unit cost</th><th className="align-right">Line total</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td>{item.productName}</td><td>{item.quantity}</td><td className="align-right">{formatMoney(item.unitCostMinor)}</td><td className="align-right">{formatMoney(item.lineTotalMinor)}</td></tr>)}</tbody></table></div><div className="receipt-totals"><div className="receipt-total"><span>Purchase total</span><strong>{formatMoney(purchase.subtotalMinor)}</strong></div><div><span>Status</span><StatusBadge tone={purchase.status === 'received' ? 'success' : purchase.status === 'cancelled' ? 'neutral' : 'warning'}>{purchase.status}</StatusBadge></div>{purchase.status === 'received' && <><div><span>Paid</span><strong>{formatMoney(paid)}</strong></div><div><span>Outstanding</span><strong>{formatMoney(outstanding)}</strong></div></>}{purchase.notes && <p>{purchase.notes}</p>}</div></Modal>;
 }

@@ -56,6 +56,7 @@ export class LedgerDatabase extends Dexie {
         await settings.put({
           id: 'business', businessName: 'My Shop', phone: '', address: '', currency: 'INR',
           taxEnabled: false, taxRateBps: 0, defaultReorderPoint: 10, theme: 'light', demoData: true,
+          setupComplete: false, checklistDismissed: false,
           updatedAt: new Date().toISOString(),
         });
       }
@@ -113,6 +114,35 @@ export class LedgerDatabase extends Dexie {
     }).upgrade(async (transaction) => {
       await transaction.table('customers').toCollection().modify((customer: Customer) => {
         customer.address ??= '';
+      });
+    });
+    this.version(5).stores({
+      products: '&id, sku, categoryName, archived, updatedAt',
+      categories: '&id, &name',
+      customers: '&id, name, phone, archived',
+      suppliers: '&id, name, phone, archived',
+      sales: '&id, &invoiceNo, operationKey, customerId, createdAt',
+      saleItems: '&id, saleId, productId',
+      purchases: '&id, &reference, supplierId, status, createdAt',
+      purchaseItems: '&id, purchaseId, productId',
+      payments: '&id, operationKey, partyId, direction, saleId, purchaseId, createdAt',
+      stockMovements: '&id, productId, source, createdAt',
+      auditEvents: '&id, entityType, entityId, createdAt',
+      operations: '&id, createdAt',
+      settings: '&id',
+    }).upgrade(async (transaction) => {
+      const settings = transaction.table('settings');
+      const business = await settings.get('business') as (BusinessSettings | undefined);
+      const dataTables = ['products', 'sales', 'customers', 'suppliers', 'purchases'];
+      const hasRecords = (await Promise.all(dataTables.map((name) => transaction.table(name).count()))).some((count) => count > 0);
+      await settings.put({
+        ...(business ?? {
+          id: 'business', businessName: 'My Shop', phone: '', address: '', currency: 'INR', taxEnabled: false,
+          taxRateBps: 0, defaultReorderPoint: 10, theme: 'light', demoData: false, updatedAt: new Date().toISOString(),
+        }),
+        demoData: hasRecords ? business?.demoData ?? false : false,
+        setupComplete: hasRecords,
+        checklistDismissed: hasRecords,
       });
     });
   }
